@@ -1,0 +1,59 @@
+{
+  "details": {
+    "awsRegion": "us-east-1",
+    "eventCategory": "Management",
+    "eventID": "4c9deb25-a128-4ef5-b556-f13f4bdff3a3",
+    "eventName": "GenerateDataKey",
+    "eventSource": "kms.amazonaws.com",
+    "eventTime": "2024-11-20T08:51:56Z",
+    "eventType": "AwsApiCall",
+    "eventVersion": "1.09",
+    "managementEvent": true,
+    "readOnly": true,
+    "recipientAccountId": "571653956102",
+    "requestID": "9167b01c-c8ae-49dc-83eb-477de155146f",
+    "requestParameters": {
+      "encryptionContext": {
+        "aws:sns:topicArn": "arn:aws:sns:us-east-1:571653956102:encrypted-cross-account-topic"
+      },
+      "keyId": "arn:aws:kms:us-east-1:571653956102:key/a3041e13-f0eb-4109-8de1-0ce74ca23d8c",
+      "keySpec": "AES_256"
+    },
+    "resources": [
+      {
+        "ARN": "arn:aws:kms:us-east-1:571653956102:key/a3041e13-f0eb-4109-8de1-0ce74ca23d8c",
+        "accountId": "571653956102",
+        "type": "AWS::KMS::Key"
+      }
+    ],
+    "responseElements": null,
+    "sessionCredentialFromConsole": "true",
+    "sourceIPAddress": "sns.amazonaws.com",
+    "userAgent": "sns.amazonaws.com",
+    "userIdentity": {
+      "accessKeyId": "ASIAYKGJ3EIDLMAPYNBU",
+      "accountId": "571653956102",
+      "arn": "arn:aws:iam::571653956102:root",
+      "invokedBy": "sns.amazonaws.com",
+      "principalId": "571653956102",
+      "sessionContext": {
+        "attributes": {
+          "creationDate": "2024-11-20T03:53:22Z",
+          "mfaAuthenticated": "true"
+        }
+      },
+      "type": "Root",
+      "userName": "badboy137"
+    }
+  },
+  "eventName": "GenerateDataKey",
+  "eventSource": "kms.amazonaws.com",
+  "resources": [
+    {
+      "ResourceName": "arn:aws:kms:us-east-1:571653956102:key/a3041e13-f0eb-4109-8de1-0ce74ca23d8c",
+      "ResourceType": null
+    }
+  ],
+  "timestamp": "2024-11-20 08:51:56",
+  "user": "root"
+}
