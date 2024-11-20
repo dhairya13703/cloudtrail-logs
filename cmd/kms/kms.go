@@ -4,8 +4,6 @@ package kms
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/dhairya13703/cloudtrail-logs/internal/aws"
 	"github.com/dhairya13703/cloudtrail-logs/internal/monitor"
@@ -15,11 +13,23 @@ import (
 )
 
 var (
-	keyID      string
-	lastN      string
-	startTime  string
-	endTime    string
-	exportFile string
+	// Key identifier (optional)
+	keyID string
+
+	// Time filters
+	lastN     string
+	startTime string
+	endTime   string
+
+	// Event filters
+	eventName   string
+	userName    string
+	operation   string
+	errorsOnly  bool
+	successOnly bool
+
+	// Export options
+	exportFile   string
 	exportFormat string
 )
 
@@ -28,7 +38,13 @@ func NewKMSCmd() *cobra.Command {
 		Use:   "kms",
 		Short: "Monitor KMS events",
 		Long: `Monitor AWS KMS key usage and events through CloudTrail logs.
-		
+        
+Search Options:
+  --key          Optional: Filter by specific KMS key ID or ARN
+  --event        Filter by event name (e.g., "Decrypt", "GenerateDataKey")
+  --user         Filter by username
+  --operation    Filter by operation type
+
 Time Range Options:
   1. Relative time (--last-n):
      - Minutes: e.g., --last-n 5m (last 5 minutes)
@@ -40,47 +56,40 @@ Time Range Options:
      - YYYY-MM-DD HH:mm:ss
      - YYYY-MM-DD HH:mm
      - YYYY-MM-DD (will use full day)
-     Maximum range: 24 hours
+
+Filter Options:
+  --errors-only  Show only error events
+  --success-only Show only successful events
 
 Export Options:
-  --export-file: Specify custom output file
-  --export-format: Specify format (text or json)
+  --export-file    Export to specific file
+  --export-format  Export format (text or json)
 
 Examples:
-  # Last N minutes/hours with default output
-  cloudtrail-logs kms --key your-key-id --last-n 30m
+  # Search all Decrypt operations
+  cloudtrail-logs kms --last-n 30m --event Decrypt
 
-  # Export to custom file
-  cloudtrail-logs kms --key your-key-id --last-n 2h --export-file ./my-events.log
+  # Search by specific user
+  cloudtrail-logs kms --last-n 1h --user admin --errors-only
 
-  # Export as JSON
-  cloudtrail-logs kms --key your-key-id --last-n 2h --export-file ./events.json --export-format json`,
+  # Search specific KMS key
+  cloudtrail-logs kms --key your-key-id --last-n 2h --operation GenerateDataKey
+
+  # Search all KMS operations by a user
+  cloudtrail-logs kms --user admin --last-n 1h --export-file user-activity.json`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
-			// Validate AWS profile
-			profile, _ := cmd.Flags().GetString("profile")
-			if err := aws.ValidateProfile(profile); err != nil {
-				fmt.Println("Error: Invalid AWS profile")
-				aws.PrintAWSProfiles()
-				return err
+			// Validate time range is provided
+			if lastN == "" && (startTime == "" || endTime == "") {
+				return fmt.Errorf("time range is required: use either --last-n or both --start and --end")
 			}
 
-			// Validate time range
-			_, _, err := timeutil.ValidateAndParseTimeRange(lastN, startTime, endTime)
-			if err != nil {
-				return fmt.Errorf("invalid time range: %v", err)
+			// Validate at least one search criteria is provided
+			if keyID == "" && eventName == "" && userName == "" && operation == "" {
+				return fmt.Errorf("at least one search criteria is required: --key, --event, --user, or --operation")
 			}
 
-			// Validate export format
-			if exportFormat != "" && exportFormat != "text" && exportFormat != "json" {
-				return fmt.Errorf("invalid export format. Use 'text' or 'json'")
-			}
-
-			// Create export directory if needed
-			if exportFile != "" {
-				dir := filepath.Dir(exportFile)
-				if err := os.MkdirAll(dir, 0755); err != nil {
-					return fmt.Errorf("failed to create export directory: %v", err)
-				}
+			if errorsOnly && successOnly {
+				return fmt.Errorf("cannot use both --errors-only and --success-only")
 			}
 
 			return nil
@@ -88,14 +97,24 @@ Examples:
 		RunE: runKMS,
 	}
 
-	kmsCmd.Flags().StringVar(&keyID, "key", "", "KMS key ID or ARN to monitor")
+	// Search flags
+	kmsCmd.Flags().StringVar(&keyID, "key", "", "Optional: Filter by KMS key ID or ARN")
+	kmsCmd.Flags().StringVar(&eventName, "event", "", "Filter by event name")
+	kmsCmd.Flags().StringVar(&userName, "user", "", "Filter by username")
+	kmsCmd.Flags().StringVar(&operation, "operation", "", "Filter by operation type")
+
+	// Time range flags
 	kmsCmd.Flags().StringVar(&lastN, "last-n", "", "Look back time (e.g., 5m, 2h)")
 	kmsCmd.Flags().StringVar(&startTime, "start", "", "Start time")
 	kmsCmd.Flags().StringVar(&endTime, "end", "", "End time")
+
+	// Filter flags
+	kmsCmd.Flags().BoolVar(&errorsOnly, "errors-only", false, "Show only error events")
+	kmsCmd.Flags().BoolVar(&successOnly, "success-only", false, "Show only successful events")
+
+	// Export flags
 	kmsCmd.Flags().StringVar(&exportFile, "export-file", "", "Export to specific file")
 	kmsCmd.Flags().StringVar(&exportFormat, "export-format", "text", "Export format (text or json)")
-
-	kmsCmd.MarkFlagRequired("key")
 
 	return kmsCmd
 }
@@ -106,22 +125,10 @@ func runKMS(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Time Range: %s (%s)\n",
-		timeutil.FormatDuration(end.Sub(start)),
-		fmt.Sprintf("%s to %s",
-			start.Format("2006-01-02 15:04:05"),
-			end.Format("2006-01-02 15:04:05")))
-
 	ctx := context.Background()
 	profile, _ := cmd.Flags().GetString("profile")
 	region, _ := cmd.Flags().GetString("region")
 	outputDir, _ := cmd.Flags().GetString("output")
-
-	// Check AWS credentials
-	if os.Getenv("AWS_ACCESS_KEY_ID") == "" || os.Getenv("AWS_SECRET_ACCESS_KEY") == "" {
-		fmt.Println("Warning: AWS credentials environment variables not found")
-		fmt.Println("Using AWS profile configuration...")
-	}
 
 	// Initialize AWS client
 	client, err := aws.NewAWSClient(ctx, profile, region)
@@ -129,26 +136,25 @@ func runKMS(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("AWS client initialization failed:\n%v", err)
 	}
 
-	// Configure export options
+	// Create filter options
+	filters := monitor.FilterOptions{
+		KeyID:       keyID,
+		EventName:   eventName,
+		UserName:    userName,
+		Operation:   operation,
+		ErrorsOnly:  errorsOnly,
+		SuccessOnly: successOnly,
+	}
+
+	// Create export options
 	exportOptions := &writer.ExportOptions{
 		Filename: exportFile,
 		Format:   exportFormat,
 	}
 
-	// Initialize monitor with export options
+	// Initialize monitor
 	kmsMonitor := monitor.NewKMSMonitor(client, outputDir, exportOptions)
 
-	// Run monitoring
-	err = kmsMonitor.MonitorKMSEvents(ctx, keyID, start, end)
-	if err != nil {
-		return err
-	}
-
-	// Print export information if file was specified
-	if exportFile != "" {
-		fmt.Printf("\nEvents exported to: %s\n", exportFile)
-		fmt.Printf("Format: %s\n", exportFormat)
-	}
-
-	return nil
+	// Run monitoring with filters
+	return kmsMonitor.MonitorKMSEvents(ctx, filters, start, end)
 }
